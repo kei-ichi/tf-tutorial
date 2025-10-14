@@ -11,6 +11,8 @@
 
 **重要：** この演習は前回のプロバイダー設定演習の続きです。AWS、Random、TLSプロバイダーが既に設定されている状態から開始します。
 
+**演習後のクリーンアップ：** この演習で作成するリソースは、演習終了時に削除します。既存のVPCやサブネットなどのネットワークインフラは残したまま、演習用のリソースのみを削除します。
+
 ## 事前準備
 
 現在のプロジェクトフォルダ `terraform-aws-practice` で作業を続けます。
@@ -120,6 +122,12 @@ No changes. Your infrastructure matches the configuration.
 5. セキュリティグループ作成（SSH許可）
    ↓
 6. EC2インスタンス作成
+   ↓
+7. リソースの確認
+   ↓
+8. AMI変更によるインスタンス置換の理解
+   ↓
+9. 演習用リソースのクリーンアップ
 ```
 
 ## タスク1：ランダム文字列リソースの作成
@@ -773,9 +781,11 @@ terraform state show aws_instance.web
 
 **質問12-B：** もしAWSコンソールから手動でこのEC2インスタンスを削除した場合、次回`terraform plan`を実行すると何が起こりますか？
 
-## タスク9：plan出力の詳細理解（in-place update）
+## タスク9：AMI変更によるインスタンス置換の実践
 
-### AMI IDの取得
+このタスクでは、実際にEC2インスタンスのAMIを変更して、`forces replacement`がどのように動作するかを体験します。
+
+### ステップ1：Ubuntu AMI IDの取得
 
 **手順：**
 
@@ -786,9 +796,9 @@ terraform state show aws_instance.web
 5. **Ubuntu Server 24.04 LTS (HVM), SSD Volume Type, arm64** を見つける
 6. AMI IDをコピー（例：`ami-0a1b2c3d4e5f6g7h8`）
 
-### 変更を加えてplanを確認
+### ステップ2：AMIを変更してplanを確認
 
-コピーしたUbuntu AMI IDを使用して、EC2インスタンスのAMIを変更してみましょう：
+コピーしたUbuntu AMI IDを使用して、EC2インスタンスのAMIを変更します：
 
 ```hcl
 resource "aws_instance" "web" {
@@ -837,68 +847,335 @@ Plan: 1 to add, 0 to change, 1 to destroy.
 
 **質問13-E：** どのような変更が`forces replacement`になりやすいですか？
 
-**重要：** この変更は適用せず、元に戻してください：
+### ステップ3：変更を実際に適用
+
+**重要：** この変更を実際に適用して、インスタンスの置換がどのように行われるかを確認します。
+
+```bash
+terraform apply
+```
+
+**実行中の出力例：**
+
+```
+aws_instance.web: Destroying... [id=i-xxxxx]
+aws_instance.web: Still destroying... [id=i-xxxxx, 10s elapsed]
+aws_instance.web: Still destroying... [id=i-xxxxx, 20s elapsed]
+aws_instance.web: Destruction complete after 30s
+aws_instance.web: Creating...
+aws_instance.web: Still creating... [10s elapsed]
+aws_instance.web: Still creating... [20s elapsed]
+aws_instance.web: Creation complete after 25s [id=i-yyyyy]
+
+Apply complete! Resources: 1 added, 0 changed, 1 destroyed.
+```
+
+### 質問14：置換実行の理解
+
+**質問14-A：** 古いインスタンスと新しいインスタンスのIDは同じですか？異なりますか？
+
+**質問14-B：** 置換中、一時的にインスタンスが存在しない期間がありましたか？
+
+**質問14-C：** セキュリティグループやKey Pairは再作成されましたか？
+
+**質問14-D：** 置換後、新しいインスタンスのOSは何になっていますか？
+
+### ステップ4：AWSコンソールで確認
+
+1. EC2 → インスタンス で新しいインスタンスのIDを確認
+2. 古いインスタンスが「terminated」状態になっているか確認
+3. 新しいインスタンスが「running」状態になっているか確認
+
+## タスク10：演習用リソースのクリーンアップ
+
+**重要：** この演習で作成したリソース（EC2、セキュリティグループ、Key Pairなど）のみを削除します。既存のVPC、サブネット、インターネットゲートウェイなどのネットワークインフラは**削除しません**。
+
+### クリーンアップ対象のリソース
+
+以下のリソースを削除します：
+
+1. `aws_instance.web` - EC2インスタンス
+2. `aws_security_group.ssh_access` - セキュリティグループ
+3. `aws_key_pair.ec2_key` - キーペア
+4. `aws_ssm_parameter.ec2_private_key` - Parameter Storeパラメータ
+5. `tls_private_key.ec2_key` - TLS秘密鍵
+6. `random_string.instance_suffix` - ランダム文字列
+7. `data.aws_ami.amazon_linux_2023` - データソース（コードから削除）
+
+### ステップ1：リソースブロックを設定ファイルから削除
+
+`main.tf`ファイルから、以下のリソースブロックとデータソースを**削除**してください：
+
+**削除するブロック：**
 
 ```hcl
+# このデータソースブロックを削除
+data "aws_ami" "amazon_linux_2023" {
+  # ...
+}
+
+# このリソースブロックを削除
+resource "random_string" "instance_suffix" {
+  # ...
+}
+
+# このリソースブロックを削除
+resource "tls_private_key" "ec2_key" {
+  # ...
+}
+
+# このリソースブロックを削除
+resource "aws_ssm_parameter" "ec2_private_key" {
+  # ...
+}
+
+# このリソースブロックを削除
+resource "aws_key_pair" "ec2_key" {
+  # ...
+}
+
+# このリソースブロックを削除
+resource "aws_security_group" "ssh_access" {
+  # ...
+}
+
+# このリソースブロックを削除
 resource "aws_instance" "web" {
-  ami = data.aws_ami.amazon_linux_2023.id  # ← 元に戻す
-  # ... 他の設定 ...
+  # ...
 }
 ```
 
-## タスク10：リソースの削除
+**重要：残すリソース**
 
-### 1つのリソースのみ削除
+以下は**削除しないでください**：
 
-まず、EC2インスタンスのみを削除してみましょう：
+- `data "aws_availability_zones"`
+- `aws_vpc.main`
+- `aws_internet_gateway.main`
+- `aws_subnet.public`
+- `aws_subnet.private`
+- `aws_route_table.public`
+- `aws_route_table_association.public`
+- すべてのoutputブロック
+- すべてのvariableブロック
 
-```bash
-# 削除計画を確認
-terraform plan -destroy -target=aws_instance.web
-
-# 実際に削除
-terraform destroy -target=aws_instance.web
-```
-
-### 質問14：ターゲット削除の理解
-
-**質問14-A：** EC2インスタンスを削除すると、セキュリティグループやKey Pairも一緒に削除されますか？
-
-**質問14-B：** もし先にaws_key_pairを削除しようとした場合、どうなりますか？
-
-**質問14-C：** aws_ssm_parameterは、EC2インスタンスが削除されても残りますか？
-
-### すべてのリソースを削除
+### ステップ2：設定の検証
 
 ```bash
-# すべてのリソースの削除計画を確認
-terraform plan -destroy
-
-# すべてのリソースを削除
-terraform destroy
+# 構文エラーがないか確認
+terraform validate
 ```
 
-**出力例：**
+**期待される結果：**
+
+```
+Success! The configuration is valid.
+```
+
+### ステップ3：削除計画の確認
+
+```bash
+# 削除予定のリソースを確認
+terraform plan
+```
+
+**期待される出力：**
+
+```
+Terraform will perform the following actions:
+
+  # aws_instance.web will be destroyed
+  - resource "aws_instance" "web" {
+      - ami                         = "ami-xxxxx" -> null
+      - id                          = "i-xxxxx" -> null
+      # ... その他の属性 ...
+    }
+
+  # aws_security_group.ssh_access will be destroyed
+  - resource "aws_security_group" "ssh_access" {
+      # ...
+    }
+
+  # aws_key_pair.ec2_key will be destroyed
+  - resource "aws_key_pair" "ec2_key" {
+      # ...
+    }
+
+  # aws_ssm_parameter.ec2_private_key will be destroyed
+  - resource "aws_ssm_parameter" "ec2_private_key" {
+      # ...
+    }
+
+  # tls_private_key.ec2_key will be destroyed
+  - resource "tls_private_key" "ec2_key" {
+      # ...
+    }
+
+  # random_string.instance_suffix will be destroyed
+  - resource "random_string" "instance_suffix" {
+      # ...
+    }
+
+Plan: 0 to add, 0 to change, 6 to destroy.
+```
+
+### 質問15：削除計画の理解
+
+**質問15-A：** `-` 記号は何を意味しますか？
+
+**質問15-B：** `-> null` とはどういう意味ですか？
+
+**質問15-C：** VPCやサブネットは削除対象に含まれていますか？
+
+**質問15-D：** どのリソースが最初に削除されると思いますか？なぜですか？
+
+### ステップ4：リソースの削除実行
+
+```bash
+# 変更を適用（演習用リソースを削除）
+terraform apply
+```
+
+**確認プロンプトが表示されます：**
 
 ```
 Plan: 0 to add, 0 to change, 6 to destroy.
 
-Do you really want to destroy all resources?
-  Terraform will destroy all your managed infrastructure, as shown above.
-  There is no undo. Only 'yes' will be accepted to confirm.
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
 
   Enter a value:
 ```
 
-### 質問15：リソース削除の理解
+**`yes`と入力してEnterを押します**
 
-**質問15-A：** `terraform destroy`を実行すると、リソースはどの順序で削除されますか？
+**削除実行中の出力例：**
 
-**質問15-B：** 削除の順序は、作成の順序と同じですか？逆ですか？
+```
+aws_instance.web: Destroying... [id=i-xxxxx]
+aws_instance.web: Still destroying... [id=i-xxxxx, 10s elapsed]
+aws_instance.web: Still destroying... [id=i-xxxxx, 20s elapsed]
+aws_instance.web: Destruction complete after 30s
+aws_security_group.ssh_access: Destroying... [id=sg-xxxxx]
+aws_key_pair.ec2_key: Destroying... [id=terraform-practice-key-abc123]
+aws_security_group.ssh_access: Destruction complete after 2s
+aws_key_pair.ec2_key: Destruction complete after 1s
+aws_ssm_parameter.ec2_private_key: Destroying... [id=/ec2/keypair/terraform-practice-private-key]
+tls_private_key.ec2_key: Destroying... [id=...]
+aws_ssm_parameter.ec2_private_key: Destruction complete after 1s
+tls_private_key.ec2_key: Destruction complete after 0s
+random_string.instance_suffix: Destroying... [id=abc123]
+random_string.instance_suffix: Destruction complete after 0s
 
-**質問15-C：** `terraform destroy`を実行した後、もう一度`terraform plan`を実行すると何が表示されますか？
+Apply complete! Resources: 0 added, 0 changed, 6 destroyed.
+```
 
-**質問15-D：** Parameter Storeに保存した秘密鍵も削除されますか？
+### 質問16：削除実行の理解
+
+**質問16-A：** リソースはどの順序で削除されましたか？
+
+**質問16-B：** 削除の順序は、作成の順序と同じですか？逆ですか？
+
+**質問16-C：** なぜEC2インスタンスが最初に削除されたのですか？
+
+**質問16-D：** なぜセキュリティグループとKey Pairは並行して削除できたのですか？
+
+### ステップ5：削除の確認
+
+```bash
+# 再度planを実行して、演習用リソースが削除されたことを確認
+terraform plan
+```
+
+**期待される出力：**
+
+```
+No changes. Your infrastructure matches the configuration.
+
+Terraform has compared your real infrastructure against your configuration
+and found no difference, so no changes are needed.
+```
+
+### ステップ6：AWSマネジメントコンソールで確認
+
+以下を確認して、演習用リソースが削除され、既存のネットワークインフラが残っていることを確かめてください：
+
+**削除されているべきリソース：**
+
+1. **EC2インスタンス**
+
+- EC2 → インスタンス
+- 作成したインスタンスが「terminated」状態になっているか確認
+
+2. **セキュリティグループ**
+
+- EC2 → セキュリティグループ
+- `terraform-practice-ssh-sg`が削除されているか確認
+
+3. **Key Pair**
+
+- EC2 → キーペア
+- 作成したKey Pairが削除されているか確認
+
+4. **Parameter Store**
+
+- Systems Manager → Parameter Store
+- `/ec2/keypair/terraform-practice-private-key`が削除されているか確認
+
+**残っているべきリソース：**
+
+1. **VPC**
+
+- VPC → Your VPCs
+- `terraform-practice-vpc`が存在することを確認
+
+2. **サブネット**
+
+- VPC → サブネット
+- パブリックサブネット2個、プライベートサブネット2個が存在することを確認
+
+3. **インターネットゲートウェイ**
+
+- VPC → インターネットゲートウェイ
+- `terraform-practice-igw`が存在することを確認
+
+4. **ルートテーブル**
+
+- VPC → ルートテーブル
+- パブリックルートテーブルが存在することを確認
+
+### 質問17：クリーンアップ後の状態確認
+
+**質問17-A：** AWSコンソールで確認した結果、演習用リソースはすべて削除されていますか？
+
+**質問17-B：** VPCとサブネットは残っていますか？
+
+**質問17-C：** 設定ファイル（main.tf）から削除したリソースブロックは、どのようになっていますか？
+
+**質問17-D：** もし演習用リソースを再度作成したい場合、どうすればよいですか？
+
+### ステップ7：最終確認
+
+```bash
+# terraform stateを確認
+terraform state list
+```
+
+**期待される出力（演習用リソースは含まれない）：**
+
+```
+data.aws_availability_zones.available
+aws_internet_gateway.main
+aws_route_table.public
+aws_route_table_association.public[0]
+aws_route_table_association.public[1]
+aws_subnet.private[0]
+aws_subnet.private[1]
+aws_subnet.public[0]
+aws_subnet.public[1]
+aws_vpc.main
+```
 
 ## 解答例と解説
 
@@ -1110,34 +1387,52 @@ aws ssm get-parameter --name "/ec2/keypair/terraform-practice-private-key" --wit
 
 **質問13-C：**
 
-1. 古いEC2インスタンスを削除
-2. 新しいEC2インスタンスを作成（Ubuntu AMI使用）
+1. 古いEC2インスタンス（Amazon Linux）を削除
+2. 新しいEC2インスタンス（Ubuntu）を作成
 3. 新しいIDが付与される
 
 **質問13-D：** AMIはインスタンスの基盤となるOSイメージであり、実行中のインスタンスでは変更できないため
 
 **質問13-E：** AMI、インスタンスタイプ、サブネット、アベイラビリティゾーンなど、EC2の基本的な設定の変更
 
+**質問14-A：** 異なります。置換により新しいIDが付与されます
+
+**質問14-B：** はい、古いインスタンスを削除してから新しいインスタンスを作成するため、一時的に存在しない期間があります
+
+**質問14-C：** いいえ、再作成されませんでした。EC2インスタンスのみが置換されました
+
+**質問14-D：** Ubuntu Server 24.04 LTS
+
 ### タスク10の解答
 
-**質問14-A：** いいえ、EC2インスタンスのみが削除されます
+**質問15-A：** 削除されるリソース
 
-**質問14-B：** エラーになります。EC2インスタンスがそのKey Pairを使用しているため
+**質問15-B：** リソースが削除された後は何も存在しない（null）という意味
 
-**質問14-C：** はい、Parameter Storeのパラメータは独立したリソースなので残ります
+**質問15-C：** いいえ、含まれていません。設定ファイルから演習用リソースのみを削除したため
 
-**質問15-A：** 依存関係の逆順
+**質問15-D：** EC2インスタンス。他のリソース（セキュリティグループ、Key Pair）を使用しているため、最初に削除する必要がある
 
-1. aws_instance（最も依存されている）
-2. aws_security_group / aws_key_pair（並行削除可能）
-3. aws_ssm_parameter / tls_private_key（並行削除可能）
+**質問16-A：** 依存関係の逆順：
+
+1. aws_instance（最も依存している）
+2. aws_security_group / aws_key_pair（並行可能）
+3. aws_ssm_parameter / tls_private_key（並行可能）
 4. random_string（最も依存されていない）
 
-**質問15-B：** 逆順です（依存されているリソースを先に削除できないため）
+**質問16-B：** 逆順です
 
-**質問15-C：** すべてのリソースを作成する計画が表示されます
+**質問16-C：** EC2インスタンスは他のリソース（セキュリティグループ、Key Pair、サブネット）を使用しているため、最初に削除する必要がある
 
-**質問15-D：** はい、aws_ssm_parameterリソースとして定義されているため削除されます
+**質問16-D：** どちらもEC2インスタンスから参照されているだけで、互いに依存していないため
+
+**質問17-A：** はい、すべて削除されています
+
+**質問17-B：** はい、残っています
+
+**質問17-C：** 完全に削除されています（コメントアウトではなく削除）
+
+**質問17-D：** 削除したリソースブロックとデータソースを再度追加して、`terraform apply`を実行する
 
 ## まとめ
 
@@ -1163,27 +1458,39 @@ aws ssm get-parameter --name "/ec2/keypair/terraform-practice-private-key" --wit
 
 4. **terraform plan出力の理解**
 
-- 変更記号（+, -/+）の意味
+- 変更記号（+, -/+, -）の意味
 - forces replacementの影響
 - sensitive値の表示
 
 5. **リソースのライフサイクル**
 
 - 作成（terraform apply）
-- 置換（forces replacement）
-- 削除（terraform destroy）
+- 置換（forces replacement）- 実際に体験
+- 削除（設定ファイルからの除去）
 
-6. **複数プロバイダーの連携**
+6. **依存関係と削除順序**
+
+- 作成は依存される側から
+- 削除は依存する側から
+- 並行実行可能な場合の挙動
+
+7. **複数プロバイダーの連携**
 
 - Random：ランダム値の生成
 - TLS：暗号化キー（ED25519）の生成
 - AWS：実際のインフラ作成とParameter Store
 
-7. **セキュリティのベストプラクティス**
+8. **セキュリティのベストプラクティス**
 
 - ED25519アルゴリズムの使用
 - 秘密鍵のParameter Storeへの安全な保存
 - リソース参照によるハードコーディング回避
+
+9. **選択的なクリーンアップ**
+
+- 演習用リソースのみを削除
+- 既存インフラを保持
+- 設定ファイルからのリソースブロック削除
 
 ### 重要なポイント
 
@@ -1192,13 +1499,4 @@ aws ssm get-parameter --name "/ec2/keypair/terraform-practice-private-key" --wit
 - **リソース参照の活用**：ハードコーディングを避け、リソース間の参照を使用
 - **依存関係の理解**：Terraformが自動的に順序を決定
 - **状態管理**：terraform.tfstateが現在の状態を記録
-
-### 次のステップ
-
-現在、あなたは以下のスキルを習得しました：
-
-- resourceブロックの作成
-- 複数プロバイダーの活用
-- リソース間の参照
-- terraform planの読み方
-- セキュアなキー管理
+- **選択的削除**：特定のリソースのみを削除する方法
